@@ -8,8 +8,6 @@ using System.Threading;
 
 namespace ServiceStack.OrmLite
 {
-    using System.Security;
-
     public class OrmLiteContext
     {
         public static readonly OrmLiteContext Instance = new OrmLiteContext();
@@ -18,7 +16,7 @@ namespace ServiceStack.OrmLite
         /// Tell ServiceStack to use ThreadStatic Items Collection for Context Scoped items.
         /// Warning: ThreadStatic Items aren't pinned to the same request in async services which callback on different threads.
         /// </summary>
-        public static bool UseThreadStatic = true;
+        public static bool UseThreadStatic = false;
 
         [ThreadStatic]
         public static IDictionary ContextItems;

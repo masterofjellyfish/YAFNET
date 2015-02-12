@@ -5,6 +5,9 @@ using System.Data.SqlClient;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using ServiceStack.Data;
 
 namespace ServiceStack.OrmLite.SqlServer
 {
@@ -88,15 +91,6 @@ namespace ServiceStack.OrmLite.SqlServer
             }
 
             return new SqlConnection(connectionString);
-        }
-
-        public override string GetQuotedTableName(ModelDefinition modelDef)
-        {
-            if (!modelDef.IsInSchema)
-                return base.GetQuotedTableName(modelDef);
-
-            var escapedSchema = modelDef.Schema.Replace(".", "\".\"");
-            return string.Format("\"{0}\".\"{1}\"", escapedSchema, NamingStrategy.GetTableName(modelDef.ModelName));
         }
 
         public override void SetDbValue(FieldDefinition fieldDef, IDataReader reader, int colIndex, object instance)
@@ -223,13 +217,13 @@ namespace ServiceStack.OrmLite.SqlServer
             return new SqlServerExpression<T>(this);
         }
 
-        public override bool DoesTableExist(IDbCommand dbCmd, string tableName)
+        public override bool DoesTableExist(IDbCommand dbCmd, string tableName, string schema = null)
         {
             var sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = {0}"
                 .SqlFmt(tableName);
 
-            //if (!string.IsNullOrEmpty(schemaName))
-            //    sql += " AND TABLE_SCHEMA = {0}".SqlFmt(schemaName);
+            if (schema != null)
+                sql += " AND TABLE_SCHEMA = {0}".SqlFmt(schema);
 
             dbCmd.CommandText = sql;
             var result = dbCmd.LongScalar();
@@ -350,14 +344,8 @@ namespace ServiceStack.OrmLite.SqlServer
             var definition = base.GetColumnDefinition(fieldName, fieldType, isPrimaryKey, autoIncrement,
                 isNullable, isRowVersion, fieldLength, scale, defaultValue, customFieldDefinition);
 
-            if (fieldType == typeof(Decimal) 
-                && (fieldLength != DefaultDecimalPrecision || scale != DefaultDecimalScale))
-            {
-                string validDecimal = String.Format("DECIMAL({0},{1})",
-                    fieldLength.GetValueOrDefault(DefaultDecimalPrecision),
-                    scale.GetValueOrDefault(DefaultDecimalScale));
-                definition = definition.Replace(DecimalColumnDefinition, validDecimal);
-            }
+            if (fieldType == typeof(Decimal))
+                return base.ReplaceDecimalColumnDefinition(definition, fieldLength, scale);
 
             return definition;
         }

@@ -73,6 +73,16 @@ namespace YAF.Data.MsSql
         }
 
         #endregion
+
+        public string GetSchemaName(string name)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        public string GetSchemaName(ModelDefinition modelDef)
+        {
+            throw new System.NotImplementedException();
+        }
     }
 
     /// <summary>

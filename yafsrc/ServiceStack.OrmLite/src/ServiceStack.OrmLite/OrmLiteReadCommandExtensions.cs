@@ -21,7 +21,6 @@ using System.Linq;
 using ServiceStack.OrmLite.Support;
 using ServiceStack.Text;
 
-
 namespace ServiceStack.OrmLite
 {
     public delegate string GetQuotedValueDelegate(object value, Type fieldType);
@@ -206,6 +205,30 @@ namespace ServiceStack.OrmLite
             var ret = new List<string>();
             ForEachParam<T>(anonType, excludeDefaults: false, fn: (pi, columnName, value) => ret.Add(pi.Name));
             return ret;
+        }
+
+        internal static Dictionary<string, object> AllFieldsMap<T>(this object anonType)
+        {
+            var ret = new Dictionary<string, object>();
+            ForEachParam<T>(anonType, excludeDefaults: false, fn: (pi, columnName, value) => ret[pi.Name] = value);
+            return ret;
+        }
+
+        internal static Dictionary<string, object> NonDefaultsOnly(this Dictionary<string, object> fieldValues)
+        {
+            var map = new Dictionary<string, object>();
+            foreach (var entry in fieldValues)
+            {
+                if (entry.Value != null)
+                {
+                    var type = entry.Value.GetType();
+                    if (!type.IsValueType || !entry.Value.Equals(type.GetDefaultValue()))
+                    {
+                        map[entry.Key] = entry.Value;
+                    }
+                }
+            }
+            return map;
         }
 
         internal static List<string> NonDefaultFields<T>(this object anonType)
@@ -819,11 +842,23 @@ namespace ServiceStack.OrmLite
             }
         }
 
-        internal static List<Into> LoadListWithReferences<Into, From>(this IDbCommand dbCmd, SqlExpression<From> expr = null)
+        internal static List<Into> LoadListWithReferences<Into, From>(this IDbCommand dbCmd, SqlExpression<From> expr = null, string[] include = null)
         {
             var loadList = new LoadListSync<Into, From>(dbCmd, expr);
 
-            foreach (var fieldDef in loadList.FieldDefs)
+            var fieldDefs = loadList.FieldDefs;
+            if (!include.IsEmpty())
+            {
+                // Check that any include values aren't reference fields of the specified From type
+                var fields = fieldDefs.Select(q => q.FieldName);
+                var invalid = include.Except<string>(fields).ToList();
+                if (invalid.Count > 0)
+                    throw new ArgumentException("Fields '{0}' are not Reference Properties of Type '{1}'".Fmt(invalid.Join("', '"), typeof(From).Name));
+
+                fieldDefs = loadList.FieldDefs.Where(fd => include.Contains(fd.FieldName)).ToList();
+            }
+
+            foreach (var fieldDef in fieldDefs)
             {
                 var listInterface = fieldDef.FieldType.GetTypeWithGenericInterfaceOf(typeof(IList<>));
                 if (listInterface != null)

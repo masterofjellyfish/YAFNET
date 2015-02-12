@@ -26,6 +26,7 @@ namespace ServiceStack.OrmLite
         private string sep = string.Empty;
         protected bool useFieldName = false;
         protected bool selectDistinct = false;
+        protected bool CustomSelect { get; set; }
         private ModelDefinition modelDef;
         public bool PrefixFieldWithTableName { get; set; }
         public bool WhereStatementWithoutWhereString { get; set; }
@@ -56,6 +57,7 @@ namespace ServiceStack.OrmLite
             to.orderByProperties = orderByProperties;
             to.selectExpression = selectExpression;
             to.selectDistinct = selectDistinct;
+            to.CustomSelect = CustomSelect;
             to.fromExpression = fromExpression;
             to.whereExpression = whereExpression;
             to.groupBy = groupBy;
@@ -85,14 +87,22 @@ namespace ServiceStack.OrmLite
         /// </param>
         public virtual SqlExpression<T> Select(string selectExpression)
         {
-            if (string.IsNullOrEmpty(selectExpression))
+            if (selectExpression != null)
+                selectExpression.SqlVerifyFragment();
+    
+            return UnsafeSelect(selectExpression);
+        }
+
+        public virtual SqlExpression<T> UnsafeSelect(string rawSelect)
+        {
+            if (string.IsNullOrEmpty(rawSelect))
             {
                 BuildSelectExpression(string.Empty, false);
             }
             else
             {
-                selectExpression.SqlVerifyFragment();
-                this.selectExpression = "SELECT " + selectExpression;
+                this.selectExpression = "SELECT " + rawSelect;
+                this.CustomSelect = true;
             }
             return this;
         }
@@ -124,17 +134,24 @@ namespace ServiceStack.OrmLite
 
         public virtual SqlExpression<T> From(string tables)
         {
-            if (string.IsNullOrEmpty(tables))
+            if (tables != null)
+                tables.SqlVerifyFragment();
+
+            return UnsafeFrom(tables);
+        }
+
+        public virtual SqlExpression<T> UnsafeFrom(string rawFrom)
+        {
+            if (string.IsNullOrEmpty(rawFrom))
             {
                 FromExpression = null;
             }
             else
             {
-                tables.SqlVerifyFragment();
-                var singleTable = tables.ToLower().IndexOfAny("join", ",") == -1;
+                var singleTable = rawFrom.ToLower().IndexOfAny("join", ",") == -1;
                 FromExpression = singleTable
-                    ? " \nFROM " + DialectProvider.GetQuotedTableName(tables)
-                    : " \nFROM " + tables;
+                    ? " \nFROM " + DialectProvider.GetQuotedTableName(rawFrom)
+                    : " \nFROM " + rawFrom;
             }
 
             return this;
@@ -147,15 +164,33 @@ namespace ServiceStack.OrmLite
             return this;
         }
 
+        public virtual SqlExpression<T> UnsafeWhere(string rawSql, params object[] filterParams)
+        {
+            AppendToWhere("AND", rawSql.SqlFmt(filterParams));
+            return this;
+        }
+
         public virtual SqlExpression<T> Where(string sqlFilter, params object[] filterParams)
         {
             AppendToWhere("AND", sqlFilter.SqlFmt(filterParams).SqlVerifyFragment());
             return this;
         }
 
+        public virtual SqlExpression<T> UnsafeAnd(string rawSql, params object[] filterParams)
+        {
+            AppendToWhere("AND", rawSql.SqlFmt(filterParams));
+            return this;
+        }
+
         public virtual SqlExpression<T> And(string sqlFilter, params object[] filterParams)
         {
             AppendToWhere("AND", sqlFilter.SqlFmt(filterParams).SqlVerifyFragment());
+            return this;
+        }
+
+        public virtual SqlExpression<T> UnsafeOr(string rawSql, params object[] filterParams)
+        {
+            AppendToWhere("OR", rawSql.SqlFmt(filterParams));
             return this;
         }
 
@@ -245,7 +280,6 @@ namespace ServiceStack.OrmLite
 
         public virtual SqlExpression<T> Having(Expression<Func<T, bool>> predicate)
         {
-
             if (predicate != null)
             {
                 useFieldName = true;

@@ -286,19 +286,41 @@ namespace ServiceStack.OrmLite
             return "'" + paramValue.Replace("'", "''") + "'";
         }
 
-        public virtual string GetQuotedTableName(ModelDefinition modelDef)
+        public virtual string GetTableName(ModelDefinition modelDef)
         {
-            return GetQuotedTableName(modelDef.ModelName);
+            return GetTableName(modelDef.ModelName, modelDef.Schema);
         }
 
-        public virtual string GetQuotedTableName(string tableName)
+        public virtual string GetTableName(string table, string schema = null)
         {
-            return string.Format("\"{0}\"", namingStrategy.GetTableName(tableName));
+            return schema != null
+                ? string.Format("{0}.{1}",
+                    NamingStrategy.GetSchemaName(schema),
+                    NamingStrategy.GetTableName(table))
+                : NamingStrategy.GetTableName(table);
+        }
+
+        public virtual string GetQuotedTableName(ModelDefinition modelDef)
+        {
+            return GetQuotedTableName(modelDef.ModelName, modelDef.Schema);
+        }
+
+        public virtual string GetQuotedTableName(string tableName, string schema = null)
+        {
+            if (schema == null)
+                return GetQuotedName(NamingStrategy.GetTableName(tableName));
+
+            var escapedSchema = NamingStrategy.GetSchemaName(schema)
+                .Replace(".", "\".\"");
+
+            return GetQuotedName(escapedSchema)
+                + "." 
+                + GetQuotedName(NamingStrategy.GetTableName(tableName));
         }
 
         public virtual string GetQuotedColumnName(string columnName)
         {
-            return string.Format("\"{0}\"", namingStrategy.GetColumnName(columnName));
+            return GetQuotedName(namingStrategy.GetColumnName(columnName));
         }
 
         public virtual string GetQuotedName(string name)
@@ -316,6 +338,23 @@ namespace ServiceStack.OrmLite
             return fieldLength.HasValue
                 ? string.Format(StringLengthColumnDefinitionFormat, fieldLength.GetValueOrDefault(DefaultStringLength))
                 : MaxStringColumnDefinition;
+        }
+
+        protected string ReplaceDecimalColumnDefinition(string definition, int? fieldLength, int? scale)
+        {
+            if (fieldLength == null && scale == null)
+                return definition;
+
+            if (fieldLength != DefaultDecimalPrecision || scale != DefaultDecimalScale)
+            {
+                var customDecimal = string.Format("DECIMAL({0},{1})",
+                    fieldLength.GetValueOrDefault(DefaultDecimalPrecision),
+                    scale.GetValueOrDefault(DefaultDecimalScale));
+
+                return definition.Replace(DecimalColumnDefinition, customDecimal);
+            }
+
+            return definition;
         }
 
         public virtual string GetColumnDefinition(string fieldName, Type fieldType,
@@ -628,12 +667,14 @@ namespace ServiceStack.OrmLite
                 fieldDef.GetQuotedValue(objWithProperties, this));
         }
 
-        public virtual bool PrepareParameterizedDeleteStatement<T>(IDbCommand cmd, ICollection<string> deleteFields = null)
+        public virtual bool PrepareParameterizedDeleteStatement<T>(IDbCommand cmd, IDictionary<string, object> deleteFields)
         {
+            if (deleteFields == null || deleteFields.Count == 0)
+                throw new ArgumentException("DELETE's must have at least 1 criteria");
+
             var sqlFilter = new StringBuilder();
             var modelDef = typeof(T).GetModelDefinition();
             var hadRowVesion = false;
-            var hasSpecificFilter = deleteFields != null && deleteFields.Count > 0;
 
             cmd.Parameters.Clear();
             cmd.CommandTimeout = OrmLiteConfig.CommandTimeout;
@@ -643,7 +684,9 @@ namespace ServiceStack.OrmLite
                 if (fieldDef.ShouldSkipDelete()) 
                     continue;
 
-                if (!fieldDef.IsRowVersion && (hasSpecificFilter && !deleteFields.Contains(fieldDef.Name)))
+                object fieldValue;
+
+                if (!deleteFields.TryGetValue(fieldDef.Name, out fieldValue))
                     continue;
 
                 if (fieldDef.IsRowVersion)
@@ -654,7 +697,16 @@ namespace ServiceStack.OrmLite
                     if (sqlFilter.Length > 0)
                         sqlFilter.Append(" AND ");
 
-                    AppendFieldCondition(sqlFilter, fieldDef, cmd);
+                    if (fieldValue != null)
+                    {
+                        AppendFieldCondition(sqlFilter, fieldDef, cmd);
+                    }
+                    else
+                    {
+                        sqlFilter
+                            .Append(GetQuotedColumnName(fieldDef.FieldName))
+                            .Append(" IS NULL");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1019,12 +1071,12 @@ namespace ServiceStack.OrmLite
             return fieldDefinition ?? GetUndefinedColumnDefinition(fieldType, null);
         }
 
-        public virtual bool DoesTableExist(IDbConnection db, string tableName)
+        public virtual bool DoesTableExist(IDbConnection db, string tableName, string schema = null)
         {
-            return db.Exec(dbCmd => DoesTableExist(dbCmd, tableName));
+            return db.Exec(dbCmd => DoesTableExist(dbCmd, tableName, schema));
         }
 
-        public virtual bool DoesTableExist(IDbCommand dbCmd, string tableName)
+        public virtual bool DoesTableExist(IDbCommand dbCmd, string tableName, string schema = null)
         {
             return false;
         }
